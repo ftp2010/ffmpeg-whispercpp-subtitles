@@ -1,6 +1,11 @@
 ---
 name: ffmpeg-whispercpp-subtitles
-description: 中文：使用 ffmpeg-full 将视频加速到 1.5x，提取音频并用 whisper.cpp 生成中文 SRT，再由当前 Cursor Agent 对话同款 LLM 全文纠错，提示用户审阅后仅在明确确认时执行硬字幕烧录。English: Speeds video to 1.5x with ffmpeg-full, extracts audio, transcribes Chinese with whisper.cpp to SRT, then has the same LLM as the current Cursor Agent chat correct the full SRT; prompts user review and only burns hard subtitles after explicit confirmation.
+description: >-
+  中文：使用 ffmpeg-full 将视频加速到 1.5x，提取音频并用 whisper.cpp 生成中文 SRT，再由当前 Cursor
+  Agent 对话同款 LLM 全文纠错，提示用户审阅后仅在明确确认时执行硬字幕烧录。English: Speeds
+  video to 1.5x with ffmpeg-full, extracts audio, transcribes Chinese with whisper.cpp to SRT, then has
+  the same LLM as the current Cursor Agent chat correct the full SRT; prompts user review and only burns
+  hard subtitles after explicit confirmation.
 ---
 
 # ffmpeg + whisper.cpp：变速、转写、Agent 纠错、人工确认、烧录字幕（macOS）
