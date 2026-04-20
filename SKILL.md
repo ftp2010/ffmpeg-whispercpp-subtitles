@@ -1,9 +1,11 @@
 ---
 name: ffmpeg-whispercpp-subtitles
-description: Speeds video to 1.5x with ffmpeg-full, extracts audio, transcribes Chinese with whisper.cpp to SRT, then has the Cursor Agent correct the full SRT using the same LLM as the chat (homophones, terms, fluency), prompts the user to review/edit the file, and only after explicit user confirmation runs hard subtitles with ffmpeg VideoToolbox. Uses $(brew --prefix ffmpeg-full)/bin/ffmpeg. Offline macOS workflow.
+description: 中文：使用 ffmpeg-full 将视频加速到 1.5x，提取音频并用 whisper.cpp 生成中文 SRT，再由当前 Cursor Agent 对话同款 LLM 全文纠错，提示用户审阅后仅在明确确认时执行硬字幕烧录。English: Speeds video to 1.5x with ffmpeg-full, extracts audio, transcribes Chinese with whisper.cpp to SRT, then has the same LLM as the current Cursor Agent chat correct the full SRT; prompts user review and only burns hard subtitles after explicit confirmation.
 ---
 
 # ffmpeg + whisper.cpp：变速、转写、Agent 纠错、人工确认、烧录字幕（macOS）
+
+[中文](#ffmpeg--whispercpp变速转写agent-纠错人工确认烧录字幕macos) | [English](#english-version)
 
 ## 适用场景
 
@@ -195,3 +197,202 @@ whisper-cli -m "$MODEL" -f "$WAV" -l zh -osrt -of "$BASE"
 ```
 
 `BASE` 不要带 `.srt`；烧录行中 `${BASE}.srt` 须为定稿文件的绝对路径。
+
+---
+
+## English Version
+
+# ffmpeg + whisper.cpp: Speed-up, Transcription, Agent Correction, Human Review, and Hard Subtitles (macOS)
+
+[中文](#ffmpeg--whispercpp变速转写agent-纠错人工确认烧录字幕macos) | [English](#english-version)
+
+## Use Cases
+
+- Speed up a local video to **1.5x** while keeping video and voice synchronized.
+- **Extract audio** for whisper.cpp transcription.
+- After generating **SRT**, use the **same LLM as the current Cursor Agent chat** (not whisper weights) to read the whole subtitle file and perform **context-aware correction**.
+- **Ask the user** to open the subtitle file locally for review and optional manual edits; burn **hard subtitles** into MP4 **only after explicit user confirmation**.
+- Use **ffmpeg-full** for speed-up and burning; use **whisper-cli** (whisper.cpp) for ASR. Subtitle polishing is done by the Agent in chat, and subtitle text is **not** sent to whisper or third-party ASR (cloud usage depends on the user's Cursor settings).
+
+## Agent Contract (Required)
+
+### ffmpeg
+
+- You must use **ffmpeg-full** with **`subtitles` filter** (libass): `"$(brew --prefix ffmpeg-full)/bin/ffmpeg"`. `brew install ffmpeg` often lacks libass.
+- Install with `brew install ffmpeg-full`. Alternative paths: `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` (Apple Silicon), `/usr/local/opt/ffmpeg-full/bin/ffmpeg` (Intel).
+
+### After Whisper, Before Burn (Core of this skill)
+
+1. **Required order (do not skip)**
+   `1.5x video` -> `extract WAV` -> **`whisper-cli` outputs `BASE.srt`** -> **Agent corrects full SRT and writes back** -> **tell user the file path and ask them to review** -> **wait for explicit confirmation** -> **final burn step**.
+
+2. **Who performs correction**
+   Use the **same LLM model that powers the current Cursor Agent chat**. Read the **entire `BASE.srt`** and correct with full-context understanding. Do **not** treat whisper `ggml-*.bin` as a separate "correction model"; whisper only generates draft transcription from audio.
+
+3. **Correction scope (without changing speaker intent)**
+   - **Homophone / near-homophone errors** using context disambiguation.
+   - **Terms, proper nouns, product names, fixed collocations** consistent with topic and full text.
+   - **Obvious fluency issues** (missing/extra/repeated words) so each cue reads naturally.
+   Do **not** heavily rewrite spoken style for polish. Do **not** fabricate unclear content; keep uncertainty or use markers like `[inaudible]` if user rules allow.
+
+4. **SRT format and timeline**
+   - You must preserve standard SRT structure: index, timestamp line, `-->`, and blank-line separators.
+   - By default, do **not** change cue timestamps; only edit subtitle text lines. If text likely belongs to adjacent timing, do not shift timeline unless explicitly requested; mention the issue to the user.
+   - Write corrected output back to the file used for burn (usually **`BASE.srt`**). Optional: save raw whisper output as **`BASE.raw.srt`** first, then overwrite `BASE.srt`.
+
+5. **User confirmation gate (mandatory)**
+   - After writing the corrected file, the Agent must clearly tell the user: absolute subtitle path, recommendation to open and review locally, and that manual edits are welcome.
+   - **Do not run Step 5 (hard burn)** until user explicitly confirms (for example: "confirmed", "go burn", "proceed").
+   - If user asks to "skip correction and burn directly", only do so when the user **explicitly waives** correction/review; otherwise follow correction + review by default.
+
+6. **Burn after user manual edits**
+   If user says they already edited subtitles manually, the Agent should **only run burn step**, using the user-specified **`BASE.srt` path** (default: current project `BASE.srt`).
+
+## ffmpeg Path (fixed form)
+
+```bash
+FFMPEG="$(brew --prefix ffmpeg-full)/bin/ffmpeg"
+# If brew is unavailable, use for example:
+# FFMPEG="/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"
+```
+
+## Prerequisites
+
+1. `whisper-cli` is in `PATH` or available by absolute path; whisper model is local `ggml-*.bin`.
+2. **`$FFMPEG`** is **ffmpeg-full** with both `h264_videotoolbox` and `subtitles` filter support.
+3. Verify `subtitles` filter:
+
+```bash
+FFMPEG="$(brew --prefix ffmpeg-full)/bin/ffmpeg"
+"$FFMPEG" -filters 2>/dev/null | grep subtitles
+```
+
+## Variable Conventions (replace globally)
+
+| Variable | Meaning |
+|------|------|
+| `FFMPEG` | `$(brew --prefix ffmpeg-full)/bin/ffmpeg` |
+| `INPUT.mp4` | Original source video |
+| `SPED.mp4` | 1.5x speed-up video (intermediate) |
+| `AUDIO.wav` | Extracted audio for whisper |
+| `MODEL.bin` | Local ggml model path (for whisper-cli only) |
+| `BASE` | Output basename (no extension). whisper generates `BASE.srt`; Agent correction writes to same file |
+| `OUT.mp4` | Final hard-subtitled video |
+
+## Workflow Overview
+
+1. **1.5x speed-up**: `setpts=PTS/1.5` + `atempo=1.5`, encoded with VideoToolbox.
+2. **Extract audio**: 16 kHz mono WAV.
+3. **Transcribe**: `whisper-cli` -> **`BASE.srt` (draft)**.
+4. **Agent correction**: current chat LLM reads full **`BASE.srt`**, applies correction rules, writes file back.
+5. **Human review**: ask user to open and edit **`BASE.srt`**; wait for explicit confirmation.
+6. **Burn**: `subtitles=filename='...BASE.srt'` + `h264_videotoolbox`.
+
+---
+
+## Step 1: Generate 1.5x Speed-up Video (A/V sync)
+
+```bash
+FFMPEG="$(brew --prefix ffmpeg-full)/bin/ffmpeg"
+"$FFMPEG" -y -i "INPUT.mp4" -filter_complex "[0:v]setpts=PTS/1.5[v];[0:a]atempo=1.5[a]" -map "[v]" -map "[a]" -c:v h264_videotoolbox -b:v 6000k -c:a aac -b:a 192k "SPED.mp4"
+```
+
+- `atempo` supports **0.5 to 2.0**; 1.5 works in a single filter.
+
+---
+
+## Step 2: Extract Audio from Sped-up Video (WAV)
+
+```bash
+FFMPEG="$(brew --prefix ffmpeg-full)/bin/ffmpeg"
+"$FFMPEG" -y -i "SPED.mp4" -ar 16000 -ac 1 -c:a pcm_s16le "AUDIO.wav"
+```
+
+---
+
+## Step 3: whisper.cpp Generates SRT (Chinese)
+
+```bash
+whisper-cli -m "MODEL.bin" -f "AUDIO.wav" -l zh -osrt -of "BASE"
+```
+
+This generates **`BASE.srt`**. The executable might be `main` or `whisper-cpp`; replace command name if needed.
+
+**Timeline note**: subtitle timing aligns with **`SPED.mp4`**. Do not burn transcription from original-speed input onto sped-up video.
+
+---
+
+## Step 4: Cursor Agent Full-file Correction (current chat model)
+
+**No one-line shell command for this step**; the Agent performs it in Cursor:
+
+1. Read full content of **`BASE.srt`**.
+2. Produce corrected full SRT following "Agent Contract" correction scope and SRT constraints.
+3. Write corrected full content back to **`BASE.srt`** (or back up to `BASE.raw.srt` first, then overwrite `BASE.srt`).
+4. Briefly explain correction categories in chat, and include absolute path of **`BASE.srt`** again.
+
+---
+
+## Step 4.5: Prompt User Review (mandatory wording)
+
+The Agent **must** send a user-facing message containing:
+
+- Ask user to open **absolute path of `BASE.srt`** in local editor.
+- Explain they can verify accuracy and **edit subtitle text freely**; burn output will strictly use this file.
+- Ask user to **explicitly confirm** before burn (for example: "confirm burn").
+
+**Do not run Step 5 before explicit user confirmation.**
+
+---
+
+## Step 5: Burn Hard Subtitles to Sped-up Video (only after confirmation)
+
+```bash
+FFMPEG="$(brew --prefix ffmpeg-full)/bin/ffmpeg"
+"$FFMPEG" -y -i "SPED.mp4" -vf "subtitles=filename='ABS/PATH/BASE.srt'" -c:v h264_videotoolbox -b:v 6000k -c:a copy "OUT.mp4"
+```
+
+Replace `ABS/PATH/BASE.srt` with the **final approved absolute subtitle path**. If path contains spaces, keep `filename='...'` single-quoted.
+
+Common errors: omitting `filename='...'` after `subtitles=`, or using non-ffmpeg-full binary.
+
+---
+
+## Optional: Soft Subtitles (mux only, no video re-encode)
+
+```bash
+FFMPEG="$(brew --prefix ffmpeg-full)/bin/ffmpeg"
+"$FFMPEG" -y -i "SPED.mp4" -i "BASE.srt" -map 0:v:0 -map 0:a:0 -map 1:0 -c:v copy -c:a copy -c:s mov_text -metadata:s:s:0 language=chi "OUT_soft.mp4"
+```
+
+Still recommended only after user confirms final subtitle text.
+
+---
+
+## PATH and system ffmpeg note
+
+- **`/opt/homebrew/bin/ffmpeg`** may be a slim build. For hard burn, always use ffmpeg-full absolute path.
+
+## Prohibited Actions (avoid regressions)
+
+- Do **not** burn hard/soft subtitles before user confirms **`BASE.srt`** (unless user explicitly waives review).
+- Do **not** use original-speed transcription to burn onto **1.5x** `SPED.mp4`.
+- Do **not** break SRT structure or arbitrarily rewrite timeline during Agent correction (default: text-only edits).
+- Do **not** use `subtitles=/path/file.srt` without `filename=`.
+- Do **not** assume `brew install ffmpeg` includes libass; use **ffmpeg-full** for hard subtitles.
+
+## One-liner Pipeline Example (automation only; excludes Agent correction and user confirmation)
+
+**Must stop after whisper**: insert Steps 4-4.5, and only run final burn command after user confirmation.
+
+```bash
+FFMPEG="$(brew --prefix ffmpeg-full)/bin/ffmpeg"
+INPUT="/path/in.mp4" SPED="/path/sped.mp4" WAV="/path/sped.wav" MODEL="/path/ggml-small.bin" BASE="/path/sped" OUT="/path/out_hardsub.mp4" && \
+"$FFMPEG" -y -i "$INPUT" -filter_complex "[0:v]setpts=PTS/1.5[v];[0:a]atempo=1.5[a]" -map "[v]" -map "[a]" -c:v h264_videotoolbox -b:v 6000k -c:a aac -b:a 192k "$SPED" && \
+"$FFMPEG" -y -i "$SPED" -ar 16000 -ac 1 -c:a pcm_s16le "$WAV" && \
+whisper-cli -m "$MODEL" -f "$WAV" -l zh -osrt -of "$BASE"
+# Stop here: Agent correction + user confirmation on BASE.srt, then run:
+# "$FFMPEG" -y -i "$SPED" -vf "subtitles=filename='${BASE}.srt'" -c:v h264_videotoolbox -b:v 6000k -c:a copy "$OUT"
+```
+
+`BASE` must not include `.srt`; in burn command, `${BASE}.srt` must resolve to the final approved absolute subtitle path.
