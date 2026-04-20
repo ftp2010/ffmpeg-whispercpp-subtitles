@@ -1,10 +1,10 @@
 ---
 name: ffmpeg-whispercpp-subtitles
 description: >-
-  中文：使用 ffmpeg-full 将视频加速到 1.5x，提取音频并用 whisper.cpp 生成中文 SRT，再由当前 Cursor
-  Agent 对话同款 LLM 全文纠错，提示用户审阅后仅在明确确认时执行硬字幕烧录。English: Speeds
+  中文：使用 ffmpeg-full 将视频加速到 1.5x，提取音频并用 whisper.cpp 生成中文 SRT，再由当前会话
+  Agent（如 Cursor/OpenClaw/Codex）同款 LLM 全文纠错，提示用户审阅后仅在明确确认时执行硬字幕烧录。English: Speeds
   video to 1.5x with ffmpeg-full, extracts audio, transcribes Chinese with whisper.cpp to SRT, then has
-  the same LLM as the current Cursor Agent chat correct the full SRT; prompts user review and only burns
+  the same LLM as the current session agent (for example Cursor/OpenClaw/Codex) correct the full SRT; prompts user review and only burns
   hard subtitles after explicit confirmation.
 ---
 
@@ -12,13 +12,18 @@ description: >-
 
 [中文](#ffmpeg--whispercpp变速转写agent-纠错人工确认烧录字幕macos) | [English](#english-version)
 
+## 平台兼容性
+
+- 本 skill 不是 Cursor 专属，可用于支持文件读写与 shell 执行的 Agent 环境（例如 Cursor、OpenClaw、Codex）。
+- 文中提到的 “Agent” 均指当前会话所使用的 AI 代理；纠错模型始终是当前会话同款 LLM，而非 whisper 模型权重。
+
 ## 适用场景
 
 - 把本地视频 **1.5 倍速**（画面 + 人声同步）。
 - **提取音频** 供 whisper.cpp 识别。
-- 生成 **SRT** 后，由 **当前 Cursor Agent 所用的大语言模型**（与对话中模型一致，**不是**再跑 whisper 权重）通读整份字幕做 **上下文纠错**。
+- 生成 **SRT** 后，由 **当前会话 Agent 所用的大语言模型**（与对话中模型一致，**不是**再跑 whisper 权重）通读整份字幕做 **上下文纠错**。
 - **提示用户**在本地打开字幕文件 **核对并可手工修改**；**用户确认后**再 **硬字幕** 烧进 MP4。
-- 变速与烧录用 **ffmpeg-full**；识别用 **whisper-cli**（whisper.cpp）；**字幕文本润色**由 Agent 在对话内完成，**不把字幕内容上传到 whisper 或第三方 ASR**（仅 Agent 处理文本，是否经云端取决于用户 Cursor 设置）。
+- 变速与烧录用 **ffmpeg-full**；识别用 **whisper-cli**（whisper.cpp）；**字幕文本润色**由 Agent 在对话内完成，**不把字幕内容上传到 whisper 或第三方 ASR**（仅 Agent 处理文本，是否经云端取决于所用平台设置）。
 
 ## Agent 约定（必读）
 
@@ -33,7 +38,7 @@ description: >-
    `1.5x 成片` → `抽 WAV` → **`whisper-cli` 生成 `BASE.srt`** → **Agent 全文纠错并写回字幕文件** → **向用户说明路径并请其打开核对** → **等待用户明确确认** → **最后一步烧录**。
 
 2. **纠错由谁做**  
-   使用 **执行本 skill 的 Cursor Agent 当前对话所用的大语言模型**（即与用户聊天的同一模型），**通读整份 `BASE.srt`**，结合全文语境做修改。**不要**另起一个「纠错模型」文件名去指 whisper 的 `ggml-*.bin`；whisper 只负责从音频出初稿。
+   使用 **执行本 skill 的当前会话 Agent 所用的大语言模型**（即与用户聊天的同一模型），**通读整份 `BASE.srt`**，结合全文语境做修改。**不要**另起一个「纠错模型」文件名去指 whisper 的 `ggml-*.bin`；whisper 只负责从音频出初稿。
 
 3. **纠错范围（在不大改说话人原意的前提下）**  
    - **同音/近音错别字**（结合前后句消歧）。  
@@ -128,9 +133,9 @@ whisper-cli -m "MODEL.bin" -f "AUDIO.wav" -l zh -osrt -of "BASE"
 
 ---
 
-## 步骤 4：Cursor Agent 全文纠错（当前对话模型）
+## 步骤 4：Agent 全文纠错（当前会话模型）
 
-**本步无 shell 一键命令**，由 Agent 在 Cursor 内完成：
+**本步无 shell 一键命令**，由 Agent 在当前会话内完成：
 
 1. 用 Read 工具（或等价方式）读取 **`BASE.srt` 完整内容**。
 2. 按本节「Agent 约定」中的纠错范围与 SRT 约束，生成 **修正后的完整 SRT 文本**。
@@ -211,13 +216,18 @@ whisper-cli -m "$MODEL" -f "$WAV" -l zh -osrt -of "$BASE"
 
 [中文](#ffmpeg--whispercpp变速转写agent-纠错人工确认烧录字幕macos) | [English](#english-version)
 
+## Platform Compatibility
+
+- This skill is not Cursor-only. It can run in any agent environment that supports file read/write and shell execution (for example Cursor, OpenClaw, Codex).
+- "Agent" in this document means the AI agent used in the current session. The correction model is always the same LLM used in the current session, not whisper model weights.
+
 ## Use Cases
 
 - Speed up a local video to **1.5x** while keeping video and voice synchronized.
 - **Extract audio** for whisper.cpp transcription.
-- After generating **SRT**, use the **same LLM as the current Cursor Agent chat** (not whisper weights) to read the whole subtitle file and perform **context-aware correction**.
+- After generating **SRT**, use the **same LLM as the current session agent** (not whisper weights) to read the whole subtitle file and perform **context-aware correction**.
 - **Ask the user** to open the subtitle file locally for review and optional manual edits; burn **hard subtitles** into MP4 **only after explicit user confirmation**.
-- Use **ffmpeg-full** for speed-up and burning; use **whisper-cli** (whisper.cpp) for ASR. Subtitle polishing is done by the Agent in chat, and subtitle text is **not** sent to whisper or third-party ASR (cloud usage depends on the user's Cursor settings).
+- Use **ffmpeg-full** for speed-up and burning; use **whisper-cli** (whisper.cpp) for ASR. Subtitle polishing is done by the Agent in chat, and subtitle text is **not** sent to whisper or third-party ASR (cloud usage depends on the platform configuration).
 
 ## Agent Contract (Required)
 
@@ -232,7 +242,7 @@ whisper-cli -m "$MODEL" -f "$WAV" -l zh -osrt -of "$BASE"
    `1.5x video` -> `extract WAV` -> **`whisper-cli` outputs `BASE.srt`** -> **Agent corrects full SRT and writes back** -> **tell user the file path and ask them to review** -> **wait for explicit confirmation** -> **final burn step**.
 
 2. **Who performs correction**
-   Use the **same LLM model that powers the current Cursor Agent chat**. Read the **entire `BASE.srt`** and correct with full-context understanding. Do **not** treat whisper `ggml-*.bin` as a separate "correction model"; whisper only generates draft transcription from audio.
+   Use the **same LLM model that powers the current session agent**. Read the **entire `BASE.srt`** and correct with full-context understanding. Do **not** treat whisper `ggml-*.bin` as a separate "correction model"; whisper only generates draft transcription from audio.
 
 3. **Correction scope (without changing speaker intent)**
    - **Homophone / near-homophone errors** using context disambiguation.
@@ -327,9 +337,9 @@ This generates **`BASE.srt`**. The executable might be `main` or `whisper-cpp`; 
 
 ---
 
-## Step 4: Cursor Agent Full-file Correction (current chat model)
+## Step 4: Agent Full-file Correction (current session model)
 
-**No one-line shell command for this step**; the Agent performs it in Cursor:
+**No one-line shell command for this step**; the Agent performs it in the current session:
 
 1. Read full content of **`BASE.srt`**.
 2. Produce corrected full SRT following "Agent Contract" correction scope and SRT constraints.
